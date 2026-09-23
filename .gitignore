@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+
+# Local Claude Code tooling (installed via `npx skills add`), not app code
+.agents/
+.claude/
+skills-lock.json
