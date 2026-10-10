@@ -7,7 +7,7 @@ from langchain_openai import ChatOpenAI
 from langchain_qdrant import QdrantVectorStore, RetrievalMode
 from qdrant_client import QdrantClient
 
-from app import config, ingest
+from app import config, ingest, rerank
 
 PROMPT = ChatPromptTemplate.from_messages(
     [
@@ -38,7 +38,7 @@ def format_docs(docs: list[Document]) -> str:
     return "\n\n".join(parts)
 
 
-def build_retriever():
+def build_retriever(k: int = config.TOP_K):
     client = QdrantClient(**ingest.get_qdrant_client_options())
     vector_store = QdrantVectorStore(
         client=client,
@@ -47,7 +47,7 @@ def build_retriever():
         sparse_embedding=ingest.get_sparse_embeddings(),
         retrieval_mode=RetrievalMode.HYBRID,
     )
-    return vector_store.as_retriever(search_kwargs={"k": config.TOP_K})
+    return vector_store.as_retriever(search_kwargs={"k": k})
 
 
 def build_chain():
@@ -59,9 +59,18 @@ def build_chain():
     return PROMPT | llm | StrOutputParser()
 
 
-def ask(question: str) -> tuple[str, list[Document]]:
-    retriever = build_retriever()
-    docs = retriever.invoke(question)
+def retrieve(question: str, use_rerank: Optional[bool] = None) -> list[Document]:
+    if use_rerank is None:
+        use_rerank = config.RERANK_ENABLED
+    if not use_rerank:
+        return build_retriever().invoke(question)
+
+    candidates = build_retriever(max(config.RERANK_CANDIDATES, config.TOP_K)).invoke(question)
+    return rerank.rerank(question, candidates, config.TOP_K)
+
+
+def ask(question: str, use_rerank: Optional[bool] = None) -> tuple[str, list[Document]]:
+    docs = retrieve(question, use_rerank)
 
     chain = build_chain()
     answer = chain.invoke({"context": format_docs(docs), "question": question})
