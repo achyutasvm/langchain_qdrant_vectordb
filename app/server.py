@@ -28,11 +28,14 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: list[ChatMessage]
+    # Overrides RERANK_ENABLED for this request when set.
+    rerank: Optional[bool] = None
 
 
 class Source(BaseModel):
     source: str
     page: Optional[int] = None
+    rerank_score: Optional[float] = None
 
 
 class ChatResponse(BaseModel):
@@ -88,12 +91,13 @@ def chat(request: ChatRequest) -> ChatResponse:
         raise HTTPException(status_code=400, detail="No user message provided")
 
     question = user_messages[-1].content
-    answer, docs = rag.ask(question)
+    answer, docs = rag.ask(question, request.rerank)
 
     sources = [
         Source(
             source=doc.metadata.get("source", ""),
             page=rag.page_label(doc.metadata.get("page")),
+            rerank_score=doc.metadata.get("rerank_score"),
         )
         for doc in docs
     ]
